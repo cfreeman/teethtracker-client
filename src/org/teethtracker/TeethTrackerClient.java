@@ -1,3 +1,21 @@
+/*
+ * Copyright (c) Clinton Freeman & Luke Atherton 2011
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+ * associated documentation files (the "Software"), to deal in the Software without restriction,
+ * including without limitation the rights to use, copy, modify, merge, publish, distribute,
+ * sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all copies or
+ * substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+ * NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 package org.teethtracker;
 
 import java.io.IOException;
@@ -49,6 +67,56 @@ public class TeethTrackerClient extends Activity {
         	BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
         	
         	Log.v("bluetracker", "enabling bluetooth");
+        	output = output + "- enabling bluetooth";
+        	Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableIntent, 3);
+            // or ba.enable();
+
+            Log.v("bluetracker", "attempting to connect");
+            output = output + "- attempting to connect";
+        	BluetoothDevice d = ba.getRemoteDevice("58:55:CA:C2:EE:6B");
+        	ba.cancelDiscovery();
+        	//BluetoothSocket s = d.createRfcommSocketToServiceRecord(UUID.randomUUID());
+        	
+        	Method m = d.getClass().getMethod("createInsecureRfcommSocket", new Class[] {int.class});
+        	BluetoothSocket tmp = (BluetoothSocket) m.invoke(d, 1);
+        	
+        	tmp.connect();
+        	//output = output + tmp.getRemoteDevice().
+        	
+        	
+        	/*BluetoothSocket ss;
+        	
+        	Class BluetoothSocketDefinition;
+            Class[] intArgsClass = new Class[] { int.class, int.class, boolean.class, boolean.class, BluetoothDevice.class, int.class, ParcelUuid.class };
+            Object[] intArgs = new Object[] { new Integer(1), new Integer(-1), new Boolean(false), new Boolean(false), d, new Integer(1), null };
+            Constructor intArgsConstructor;
+       	
+            BluetoothSocketDefinition = Class.forName("android.bluetooth.BluetoothSocket");
+            intArgsConstructor = BluetoothSocketDefinition.getConstructor(intArgsClass);
+            
+            ss = (BluetoothSocket) intArgsConstructor.newInstance(intArgs);
+            ss.connect();*/     
+
+        	//Method mm = ss.getClass().getConstructor(new Class[] {int.class});
+           // BluetoothSocket sss = (BluetoothSocket) mm.invoke(1, -1, false, false, d, 1, null);
+        	
+        	//Method m = d.getClass().getMethod("createRfcommSocket", new Class[] {int.class});
+            //BluetoothSocket s = (BluetoothSocket) m.invoke(d, 1);
+        	
+        	// NOT in my API: d.createInsecureRfcommSocketToServiceRecord(UUID.randomUUID());
+        	//s.connect();
+        	
+        	output = output + "- connected";
+        	
+        	tmp.close();
+        	ba.disable();
+        	ba.enable();
+        	
+        	/*
+        	BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
+        	
+        	Log.v("bluetracker", "enabling bluetooth");
         	//tv.setText("enabling bluetooth");
         	output = output + "- enabling bluetooth";
         	Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
@@ -74,19 +142,18 @@ public class TeethTrackerClient extends Activity {
         	//s.connect();
         	
         	output = output + "- connected";
+        	*/
 
         } catch (IllegalArgumentException e) {
         	Log.v("bluetracker", "illegal MAC addrss");
-        	//tv.setText("illegal MAC address");
         	output = output + " - illegal MAC address";
-       /* } catch (IOException e) {
+        } catch (IOException e) {
         	Log.v("bluetracker", "unable to connect");
-        	//tv.setText("unable to connect: " + e.getMessage());
         	output = output + " - unable to connect: " + e.getMessage();
         } catch (NoSuchMethodException e) {
         	Log.v("bluetracker", "unable to find method");
         	output = output + " - unable to find rf comm socket";
-        */} catch (Exception e) {
+        } catch (Exception e) {
 			Log.v("bluetracker", "unable to call method");
         	output = output + " - unable to call rf comm socket";
         }
