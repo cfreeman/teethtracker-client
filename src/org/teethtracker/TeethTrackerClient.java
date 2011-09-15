@@ -37,12 +37,15 @@ import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.bluetooth.IBluetooth;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.os.Looper;
+import android.os.RemoteException;
 import android.widget.TextView;
 
 public class TeethTrackerClient extends Activity {	
@@ -53,6 +56,8 @@ public class TeethTrackerClient extends Activity {
 	private BluetoothSocket btSocket;
 	
 	private TextView tv;
+	
+	private IBluetooth ib;
 	
 	/**
 	 * @return The list of bluetooth devices that we are looking at following in this particular node.
@@ -111,8 +116,27 @@ public class TeethTrackerClient extends Activity {
 							 id.substring(10, 12);
 		
 		tv.append("Looking for: " + bluetoothID + "\n");
-				
-		try {    	
+		
+		BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
+      	ba.cancelDiscovery();
+      	
+      	tv.append("enabling bluetooth\n");
+      	
+      	// Enable Bluetooth if it is switched off.
+      	if (!ba.isEnabled()) {
+      		Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+      		startActivityForResult(enableIntent, 3);
+      	}
+		
+		ib = getIBluetooth();
+		
+    	try {
+			ib.createBond(bluetoothID);
+		} catch (RemoteException e) {
+			tv.append("Problem creating bond: " + e.toString() + "\n");
+		}
+		
+		/*try {    	
 	      	//connection is sometimes still open from last run
 	      	if (btSocket != null) {
 	              try {btSocket.close();} catch (Exception e) {}
@@ -153,7 +177,7 @@ public class TeethTrackerClient extends Activity {
 	        intArgsConstructor = BluetoothSocketDefinition.getConstructor(intArgsClass);
 	        
 	        ss = (BluetoothSocket) intArgsConstructor.newInstance(intArgs);
-	        ss.connect();*/     
+	        ss.connect();    
 
 	    } catch (IllegalArgumentException e) {
 	    	tv.append("illegal MAC address: " + e.getMessage() + "\n");
@@ -163,7 +187,7 @@ public class TeethTrackerClient extends Activity {
 	    	tv.append("unable to find method: " + e.getMessage() + "\n");
 	    } catch (Exception e) {
 	    	tv.append("unable to call rf comm socket: " + e.getMessage() + "\n");
-	    }
+	    }*/
 
 		return false;
 	}
@@ -182,27 +206,51 @@ public class TeethTrackerClient extends Activity {
 	    }
 	};
 	
+	private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+	    @Override
+	    public void onReceive(Context context, Intent intent) {
+	        BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+	        tv.append(device.getAddress() + "\n");
+	        
+	        try {
+				ib.cancelPairingUserInput(device.getAddress());
+				ib.cancelBondProcess(device.getAddress());
+			} catch (RemoteException e) {
+				tv.append("Unable to cancel bond: " + e.getMessage() + "\n");
+			}
+	        
+	        tv.append("ACTION: " + intent.getAction() + "\n");
+	    }
+	};
+	
     /** Called when the activity is first created. */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         tv = new TextView(this);
         
-        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
+        /*registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
         registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
         registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED));
         registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED));
-        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
+        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));*/
 
+        registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
+        registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED));
+        
+        String ACTION_PAIRING_REQUEST = "android.bluetooth.device.action.PAIRING_REQUEST";
+        
+        registerReceiver(mReceiver, new IntentFilter(ACTION_PAIRING_REQUEST));
+        
         tv.setText("Start\n");
         setContentView(tv);
         
         new Thread(new Runnable() {
             public void run() {
             	Looper.prepare();
-                //isDeviceHere("5855CAC2EE6B");
+                isDeviceHere("5855CAC2EE6B");
                 //isDeviceHere("0007AB853D8C");
-                isDeviceHere("D49A201D13D0");
+                //isDeviceHere("D49A201D13D0");
                 
         /*
                 HashMap<String, Boolean> lastLocatedDevices = new HashMap<String, Boolean>();
@@ -245,6 +293,33 @@ public class TeethTrackerClient extends Activity {
         	     */                   
             }
         }).start();
+    }
+    
+    private IBluetooth getIBluetooth() {
+    	IBluetooth ibt = null;
+
+    	try {
+
+    	    Class c2 = Class.forName("android.os.ServiceManager");
+
+    	    Method m2 = c2.getDeclaredMethod("getService",String.class);
+    	    IBinder b = (IBinder) m2.invoke(null, "bluetooth");
+
+    	    Class c3 = Class.forName("android.bluetooth.IBluetooth");
+
+    	    Class[] s2 = c3.getDeclaredClasses();
+
+    	    Class c = s2[0];
+    	    Method m = c.getDeclaredMethod("asInterface",IBinder.class);
+    	    m.setAccessible(true);
+    	    ibt = (IBluetooth) m.invoke(null, b);
+
+
+    	} catch (Exception e) {
+    	    tv.append("IBluetooth problem: " + e.getMessage() + "\n");
+    	}
+
+    	return ibt;
     }
     
     @Override
