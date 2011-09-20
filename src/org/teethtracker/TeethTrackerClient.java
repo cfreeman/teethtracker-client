@@ -176,8 +176,6 @@ public class TeethTrackerClient extends Activity {
 	        
 	        if(BluetoothDevice.ACTION_FOUND.equals(action)) {
 	        	tv.append("DEVICE FOUND!\n");
-	            //short rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI,Short.MIN_VALUE);
-	            //Toast.makeText(getApplicationContext(),"  RSSI: " + rssi + "dBm", Toast.LENGTH_SHORT).show();
 	        }
 	    }
 	};
