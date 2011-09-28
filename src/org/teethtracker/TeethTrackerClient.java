@@ -71,9 +71,27 @@ public class TeethTrackerClient extends Activity {
 	final static int SCAN_TIMEOUT = 5000;
 	
 	/**
+	 * The various possible device states, either a departure or an arrival.
+	 */
+	private enum DeviceStateChange {
+		DEPARTURE("departure"),
+		ARRIVAL("arrival");
+
+		private String type;
+
+		private DeviceStateChange(String changeType) {
+			type = changeType;
+		}
+
+		public String getType() {
+			return type;
+		}
+	}
+
+	/**
 	 * @return The list of bluetooth devices that we are looking at following in this particular node.
 	 */
-	private List<String> getTrackingList() {
+	private List<String> getDeviceList() {
 		List<String> results = new ArrayList<String>();
 		updateUI("***getTrackingList\n");
 
@@ -108,24 +126,6 @@ public class TeethTrackerClient extends Activity {
 		}
 	
 		return results;
-	}		
-	
-	/**
-	 * The various possible device states, either a departure or an arrival.
-	 */
-	private enum DeviceStateChange {
-		DEPARTURE("departure"),
-		ARRIVAL("arrival");
-		
-		private String type;
-		
-		private DeviceStateChange(String changeType) {
-			type = changeType;
-		}
-		
-		public String getType() {
-			return type;
-		}
 	}
 	
 	/**
@@ -252,6 +252,7 @@ public class TeethTrackerClient extends Activity {
         new Thread(new Runnable() {
             public void run() {
             	Looper.prepare();
+
             	//markDevice("5855CAC2EE6B", DeviceStateChange.DEPARTURE);
             	//markDevice("5855CAC2EE6B", DeviceStateChange.ARRIVAL);
             	
@@ -268,7 +269,7 @@ public class TeethTrackerClient extends Activity {
                 HashMap<String, Boolean> lastLocatedDevices = new HashMap<String, Boolean>();
 
                 // TODO: Allow people to enter a NODE name.
-                // TODO: Need to perform the below in a loop with pauses in between.
+                // TODO: Need to perform the below in a loop.
 
                 // While our application is running {
         	    
@@ -276,11 +277,9 @@ public class TeethTrackerClient extends Activity {
                 	List<String> allDevices = getTrackingList();
         	    	for (String bluetoothID : allDevices) {
         	    		if (isDeviceHere(bluetoothID)) {
-        	    			// Only send a message to the tracking server if the device is present.
+        	    			// Only send a message to the tracking server if the device wasn't present last pass through.
         	    			if (!lastLocatedDevices.get(bluetoothID)) {
-        	    				// MAKE ALL TO:
-        	    				// http://teethtracker.heroku.com/device_movements/new?type=arrival&node=NODENAME&bluetoodh_id=bluetoothID	    				
-        	    			
+        	    				markDevice(bluetoothID, DeviceStateChange.ARRIVAL);
         	    			// Remove device from last located list - everything left in this list at the end of the scan have left the cell.
         	    			} else {
         	    				lastLocatedDevices.remove(bluetoothID);
@@ -291,14 +290,14 @@ public class TeethTrackerClient extends Activity {
         	    	}
 
         	    	for (String bluetoothID : lastLocatedDevices.keySet()) {
-        	    		// http://teethtracker.heroku.com/device_movements/new?type=departure&node=NODENAME&bluetoodh_id=bluetoothID
+        	    		markDevice(bluetoothID, DeviceStateChange.DEPARTURE);
         	    	}
 
         	    	// Update the last located devices.
         	    	lastLocatedDevices.clear();
         	    	lastLocatedDevices = locatedDevices;
 
-        	    //   thread.sleep(5000); // wait 5 seconds before polling again.
+        	    	Thread.yield();
         	    // }  
         	     */
             	updateUI("done\n");
