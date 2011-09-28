@@ -24,9 +24,13 @@ import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Exchanger;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -58,13 +62,20 @@ public class TeethTrackerClient extends Activity {
 	private TextView tv;
 	
 	private IBluetooth ib;
+
+	private Boolean detected = false;
+	private Exchanger<Boolean> exchanger = new Exchanger<Boolean>();
+	
+	final static String NODE_NAME = "tableB";
+	
+	final static int SCAN_TIMEOUT = 5000;
 	
 	/**
 	 * @return The list of bluetooth devices that we are looking at following in this particular node.
 	 */
 	private List<String> getTrackingList() {
 		List<String> results = new ArrayList<String>();
-		tv.append("***getTrackingList\n");
+		updateUI("***getTrackingList\n");
 
 		try {
 			URL centralTracker = new URL("http://teethtracker.heroku.com/devices.json");
@@ -85,19 +96,75 @@ public class TeethTrackerClient extends Activity {
 				JSONObject device = list.getJSONObject(i).getJSONObject("device");
 				String bluetoothID = device.getString("bluetooth_id").toUpperCase();
 				results.add(bluetoothID);
-				tv.append("ID= " + bluetoothID + "\n");
+				updateUI("ID= " + bluetoothID + "\n");
 			}
 
 		} catch (MalformedURLException e) {			
-			tv.append("Unable to create URL: " + e.toString() + "\n");
+			updateUI("Unable to create URL: " + e.toString() + "\n");
 		} catch (IOException e) {
-			tv.append("Unable to open connection: " + e.toString() + "\n");
+			updateUI("Unable to open connection: " + e.toString() + "\n");
 		} catch (JSONException e) {
 			tv.append("Unable to parse JSON: " + e.toString() + "\n");
 		}
 	
 		return results;
+	}		
+	
+	/**
+	 * The various possible device states, either a departure or an arrival.
+	 */
+	private enum DeviceStateChange {
+		DEPARTURE("departure"),
+		ARRIVAL("arrival");
+		
+		private String type;
+		
+		private DeviceStateChange(String changeType) {
+			type = changeType;
+		}
+		
+		public String getType() {
+			return type;
+		}
 	}
+	
+	/**
+	 * Helper method to update the user interface (in the correct thread).
+	 *
+	 * @param content The content you want to display in the user interface.
+	 */
+	private void updateUI(final String content) {
+		runOnUiThread(new Runnable() {
+			public void run() {
+				tv.append(content);
+			}
+		});
+	}
+	
+	/**
+	 * Method that logs a tracking message at the central server.
+	 *
+	 * @param id The Bluetooth MAC address of the device we are updating.
+	 * @param stateChange The new state of the supplied device id.
+	 */
+	private void trackDevice(final String id, final DeviceStateChange stateChange) {
+		try {
+			updateUI("starting device mark\n");
+		    URL centralTracker = new URL("http://teethtracker.heroku.com/device_movements/new?type="
+		    						     + stateChange.getType() + "&node=" + NODE_NAME + "&bluetooth_id=" + id);
+		    URLConnection trackerConnection = centralTracker.openConnection();
+		    updateUI("about to start\n");
+		    trackerConnection.getContentLength();
+		    updateUI("Marking " + id + " " + stateChange.getType() + " @ " + NODE_NAME + "\n");
+
+		} catch (MalformedURLException e) {
+			updateUI("Malformed URL Exception: " + e.toString() + "\n");
+		} catch (IOException e) {
+			updateUI("IOException: " + e.toString() + "\n");
+		}
+	}
+	
+	private final Object lock = new Object();
 	
 	/**
 	 * Determines if the supplied bluetooth device is present in the cell.
@@ -107,7 +174,7 @@ public class TeethTrackerClient extends Activity {
 	 * @return True if the device is present in this node, false otherwise.
 	 */
 	private boolean isDeviceHere(String id) {
-		tv.append("***isDeviceHere\n");
+		updateUI("***isDeviceHere\n");
 		String bluetoothID = id.substring(0, 2) + ":" +
 							 id.substring(2, 4) + ":" +
 							 id.substring(4, 6) + ":" +
@@ -115,147 +182,92 @@ public class TeethTrackerClient extends Activity {
 							 id.substring(8, 10) + ":" +
 							 id.substring(10, 12);
 		
-		tv.append("Looking for: " + bluetoothID + "\n");
+		updateUI("Looking for: " + bluetoothID + "\n");
 		
 		BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
       	ba.cancelDiscovery();
       	
-      	tv.append("enabling bluetooth\n");
+      	updateUI("enabling bluetooth\n");
       	
       	// Enable Bluetooth if it is switched off.
       	if (!ba.isEnabled()) {
       		Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
       		startActivityForResult(enableIntent, 3);
       	}
-		
+
 		ib = getIBluetooth();
+		updateUI("Got Bluetooth: " + ib.toString() + "\n");
+		detected = false;
 		
     	try {
-			ib.createBond(bluetoothID);
+    		ib.createBond(bluetoothID);
+    		exchanger.exchange(detected, SCAN_TIMEOUT, TimeUnit.MILLISECONDS);
 		} catch (RemoteException e) {
-			tv.append("Problem creating bond: " + e.toString() + "\n");
-		}
-		
-		/*try {    	
-	      	//connection is sometimes still open from last run
-	      	if (btSocket != null) {
-	              try {btSocket.close();} catch (Exception e) {}
-	              btSocket = null;
-	      	}
-	      	
-	      	BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
-	      	ba.cancelDiscovery();
-	      	
-	      	tv.append("enabling bluetooth\n");
-	      	
-	      	// Enable Bluetooth if it is switched off.
-	      	if (!ba.isEnabled()) {
-	      		Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-	      		startActivityForResult(enableIntent, 3);
-	      	}
-	
-	        tv.append("attempting to connect\n");
-	        ba.cancelDiscovery();
-	        BluetoothDevice d = ba.getRemoteDevice(bluetoothID);
-	      	
-	      	//Method m = d.getClass().getMethod("createInsecureRfcommSocketToServiceRecord", new Class[] {int.class});
-	      	Method m = d.getClass().getMethod("createInsecureRfcommSocket", new Class[] {int.class});
-	      	btSocket = (BluetoothSocket) m.invoke(d, UUID.randomUUID());
-	      	btSocket.connect();
-	      	tv.append("connected\n");
-	      	btSocket.close();	
-	        tv.append("finished\n");
-	
-	    	/*BluetoothSocket ss;
-	    	
-	    	Class BluetoothSocketDefinition;
-	        Class[] intArgsClass = new Class[] { int.class, int.class, boolean.class, boolean.class, BluetoothDevice.class, int.class, ParcelUuid.class };
-	        Object[] intArgs = new Object[] { new Integer(1), new Integer(-1), new Boolean(false), new Boolean(false), d, new Integer(1), null };
-	        Constructor intArgsConstructor;
-	   	
-	        BluetoothSocketDefinition = Class.forName("android.bluetooth.BluetoothSocket");
-	        intArgsConstructor = BluetoothSocketDefinition.getConstructor(intArgsClass);
-	        
-	        ss = (BluetoothSocket) intArgsConstructor.newInstance(intArgs);
-	        ss.connect();    
+			updateUI("Problem creating bond: " + e.toString() + "\n");
+		} catch (InterruptedException e) {
+			updateUI("Interrupted wait: " + e.toString() + "\n");
+		} catch (TimeoutException e) {
+			// Do nothing... We timeout when we can't find the device.
+		} 
 
-	    } catch (IllegalArgumentException e) {
-	    	tv.append("illegal MAC address: " + e.getMessage() + "\n");
-	    } catch (IOException e) {
-	    	tv.append("unable to connect: " + e.getMessage() + "\n");
-	    } catch (NoSuchMethodException e) {
-	    	tv.append("unable to find method: " + e.getMessage() + "\n");
-	    } catch (Exception e) {
-	    	tv.append("unable to call rf comm socket: " + e.getMessage() + "\n");
-	    }*/
-
-		return false;
+		return detected;
 	}
 	
-	private final BroadcastReceiver receiver = new BroadcastReceiver(){
-	    @Override
-	    public void onReceive(Context context, Intent intent) {
-	        String action = intent.getAction();
-	        tv.append("ACTION: " + action + "\n");
-	        
-	        if(BluetoothDevice.ACTION_FOUND.equals(action)) {
-	        	tv.append("DEVICE FOUND!\n");
-	        }
-	    }
-	};
-	
+	/**
+	 * Intent receiver for listening to for bluetooth connections.
+	 */
 	private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
 	    @Override
 	    public void onReceive(Context context, Intent intent) {
 	        BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-	        tv.append(device.getAddress() + "\n");
+	        updateUI(device.getAddress() + "\n");
 	        
 	        try {
 				ib.cancelPairingUserInput(device.getAddress());
 				ib.cancelBondProcess(device.getAddress());
+				detected = true;
+				exchanger.exchange(detected);
 			} catch (RemoteException e) {
-				tv.append("Unable to cancel bond: " + e.getMessage() + "\n");
+				updateUI("Unable to cancel bond: " + e.getMessage() + "\n");
+			} catch (InterruptedException e) {
+				updateUI("interrupted exchange");
 			}
 	        
-	        tv.append("ACTION: " + intent.getAction() + "\n");
+			updateUI("ACTION: " + intent.getAction() + "\n");
 	    }
 	};
 	
-    /** Called when the activity is first created. */
+    /**
+     * Called when activity is first created.
+     */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         tv = new TextView(this);
-        
-        /*registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_FOUND));
-        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
-        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECT_REQUESTED));
-        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED));
-        registerReceiver(receiver, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));*/
 
         registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
-        registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_DISCONNECTED));
-        
-        String ACTION_PAIRING_REQUEST = "android.bluetooth.device.action.PAIRING_REQUEST";
-        
-        registerReceiver(mReceiver, new IntentFilter(ACTION_PAIRING_REQUEST));
-        
         tv.setText("Start\n");
         setContentView(tv);
         
         new Thread(new Runnable() {
             public void run() {
             	Looper.prepare();
-                isDeviceHere("5855CAC2EE6B");
+            	//markDevice("5855CAC2EE6B", DeviceStateChange.DEPARTURE);
+            	//markDevice("5855CAC2EE6B", DeviceStateChange.ARRIVAL);
+            	
+                //isDeviceHere("5855CAC2EE6B");
                 //isDeviceHere("0007AB853D8C");
-                //isDeviceHere("D49A201D13D0");
-                
+                if (isDeviceHere("D49A201D13D0")) {
+                	updateUI("FOUND: D49A201D13D0\n");
+                } else {
+                	updateUI("CAN'T FIND: D49A201D13D0\n");
+                }
+
+
         /*
                 HashMap<String, Boolean> lastLocatedDevices = new HashMap<String, Boolean>();
-                
+
                 // TODO: Allow people to enter a NODE name.
-                // TODO: Need to be able to update the interface - while we loop and scan.
-                // TODO: Need to create the URL's that we are going to poll / message.
                 // TODO: Need to perform the below in a loop with pauses in between.
 
                 // While our application is running {
@@ -288,8 +300,9 @@ public class TeethTrackerClient extends Activity {
 
         	    //   thread.sleep(5000); // wait 5 seconds before polling again.
         	    // }  
-        	     */                   
-            }
+        	     */
+            	updateUI("done\n");
+            }            
         }).start();
     }
     
@@ -297,7 +310,6 @@ public class TeethTrackerClient extends Activity {
     	IBluetooth ibt = null;
 
     	try {
-
     	    Class c2 = Class.forName("android.os.ServiceManager");
 
     	    Method m2 = c2.getDeclaredMethod("getService",String.class);
@@ -312,14 +324,13 @@ public class TeethTrackerClient extends Activity {
     	    m.setAccessible(true);
     	    ibt = (IBluetooth) m.invoke(null, b);
 
-
     	} catch (Exception e) {
-    	    tv.append("IBluetooth problem: " + e.getMessage() + "\n");
+    		updateUI("IBluetooth problem: " + e.getMessage() + "\n");
     	}
 
     	return ibt;
     }
-    
+
     @Override
     public void onResume() {
     	super.onResume();
@@ -327,7 +338,7 @@ public class TeethTrackerClient extends Activity {
 
     @Override
     public void onStop() {
-    	running = false;
+    	running = false;	
     	super.onStop();
     }
 
