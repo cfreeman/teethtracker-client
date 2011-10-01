@@ -26,6 +26,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Exchanger;
@@ -53,23 +54,23 @@ import android.os.RemoteException;
 import android.widget.TextView;
 
 public class TeethTrackerClient extends Activity {	
-		
+
 	// Is our scanning process running or not?
 	private boolean running = true;
-	
+
 	private BluetoothSocket btSocket;
-	
+
 	private TextView tv;
-	
+
 	private IBluetooth ib;
 
 	private Boolean detected = false;
 	private Exchanger<Boolean> exchanger = new Exchanger<Boolean>();
-	
-	final static String NODE_NAME = "tableB";
-	
-	final static int SCAN_TIMEOUT = 5000;
-	
+
+	final static String NODE_NAME = "zoneP";
+
+	final static int SCAN_TIMEOUT = 10000;
+
 	/**
 	 * The various possible device states, either a departure or an arrival.
 	 */
@@ -93,7 +94,7 @@ public class TeethTrackerClient extends Activity {
 	 */
 	private List<String> getDeviceList() {
 		List<String> results = new ArrayList<String>();
-		updateUI("***getTrackingList\n");
+		updateUI("***getDeviceList\n");
 
 		try {
 			URL centralTracker = new URL("http://teethtracker.heroku.com/devices.json");
@@ -114,7 +115,6 @@ public class TeethTrackerClient extends Activity {
 				JSONObject device = list.getJSONObject(i).getJSONObject("device");
 				String bluetoothID = device.getString("bluetooth_id").toUpperCase();
 				results.add(bluetoothID);
-				updateUI("ID= " + bluetoothID + "\n");
 			}
 
 		} catch (MalformedURLException e) {			
@@ -122,7 +122,7 @@ public class TeethTrackerClient extends Activity {
 		} catch (IOException e) {
 			updateUI("Unable to open connection: " + e.toString() + "\n");
 		} catch (JSONException e) {
-			tv.append("Unable to parse JSON: " + e.toString() + "\n");
+			updateUI("Unable to parse JSON: " + e.toString() + "\n");
 		}
 	
 		return results;
@@ -148,23 +148,20 @@ public class TeethTrackerClient extends Activity {
 	 * @param stateChange The new state of the supplied device id.
 	 */
 	private void trackDevice(final String id, final DeviceStateChange stateChange) {
+		updateUI("***trackDevice: " + id + " - " + stateChange.getType() + "\n");
+
 		try {
-			updateUI("starting device mark\n");
 		    URL centralTracker = new URL("http://teethtracker.heroku.com/device_movements/new?type="
 		    						     + stateChange.getType() + "&node=" + NODE_NAME + "&bluetooth_id=" + id);
 		    URLConnection trackerConnection = centralTracker.openConnection();
-		    updateUI("about to start\n");
 		    trackerConnection.getContentLength();
-		    updateUI("Marking " + id + " " + stateChange.getType() + " @ " + NODE_NAME + "\n");
 
 		} catch (MalformedURLException e) {
 			updateUI("Malformed URL Exception: " + e.toString() + "\n");
 		} catch (IOException e) {
 			updateUI("IOException: " + e.toString() + "\n");
 		}
-	}
-	
-	private final Object lock = new Object();
+	}	
 	
 	/**
 	 * Determines if the supplied bluetooth device is present in the cell.
@@ -174,7 +171,7 @@ public class TeethTrackerClient extends Activity {
 	 * @return True if the device is present in this node, false otherwise.
 	 */
 	private boolean isDeviceHere(String id) {
-		updateUI("***isDeviceHere\n");
+		updateUI("***isDeviceHere: " + id + "\n");
 		String bluetoothID = id.substring(0, 2) + ":" +
 							 id.substring(2, 4) + ":" +
 							 id.substring(4, 6) + ":" +
@@ -182,23 +179,17 @@ public class TeethTrackerClient extends Activity {
 							 id.substring(8, 10) + ":" +
 							 id.substring(10, 12);
 		
-		updateUI("Looking for: " + bluetoothID + "\n");
-		
 		BluetoothAdapter ba = BluetoothAdapter.getDefaultAdapter();
       	ba.cancelDiscovery();
-      	
-      	updateUI("enabling bluetooth\n");
-      	
+
       	// Enable Bluetooth if it is switched off.
       	if (!ba.isEnabled()) {
-      		Intent enableIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-      		startActivityForResult(enableIntent, 3);
+      		ba.enable();
       	}
 
 		ib = getIBluetooth();
-		updateUI("Got Bluetooth: " + ib.toString() + "\n");
 		detected = false;
-		
+
     	try {
     		ib.createBond(bluetoothID);
     		exchanger.exchange(detected, SCAN_TIMEOUT, TimeUnit.MILLISECONDS);
@@ -208,33 +199,40 @@ public class TeethTrackerClient extends Activity {
 			updateUI("Interrupted wait: " + e.toString() + "\n");
 		} catch (TimeoutException e) {
 			// Do nothing... We timeout when we can't find the device.
-		} 
+		}
 
 		return detected;
 	}
-	
+
 	/**
 	 * Intent receiver for listening to for bluetooth connections.
 	 */
 	private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
 	    @Override
 	    public void onReceive(Context context, Intent intent) {
-	        BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-	        updateUI(device.getAddress() + "\n");
-	        
 	        try {
-				ib.cancelPairingUserInput(device.getAddress());
-				ib.cancelBondProcess(device.getAddress());
 				detected = true;
 				exchanger.exchange(detected);
-			} catch (RemoteException e) {
-				updateUI("Unable to cancel bond: " + e.getMessage() + "\n");
 			} catch (InterruptedException e) {
 				updateUI("interrupted exchange");
 			}
-	        
-			updateUI("ACTION: " + intent.getAction() + "\n");
 	    }
+	};
+
+	private final BroadcastReceiver mReceiver2 = new BroadcastReceiver() {
+		@Override
+		public void onReceive(Context context, Intent intent) {
+			BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+			try {
+				if (device.getBondState() == BluetoothDevice.BOND_BONDING) {
+					updateUI("Cancelling device Bond: " + device.getAddress() + "\n");
+					ib.cancelPairingUserInput(device.getAddress());
+					ib.cancelBondProcess(device.getAddress());
+				}
+			} catch (RemoteException e) {
+				updateUI("Unable to cancel bond: " + e.getMessage() + "\n");
+			}
+		}
 	};
 	
     /**
@@ -246,6 +244,7 @@ public class TeethTrackerClient extends Activity {
         tv = new TextView(this);
 
         registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
+        registerReceiver(mReceiver2, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
         tv.setText("Start\n");
         setContentView(tv);
         
@@ -253,33 +252,18 @@ public class TeethTrackerClient extends Activity {
             public void run() {
             	Looper.prepare();
 
-            	//markDevice("5855CAC2EE6B", DeviceStateChange.DEPARTURE);
-            	//markDevice("5855CAC2EE6B", DeviceStateChange.ARRIVAL);
-            	
-                //isDeviceHere("5855CAC2EE6B");
-                //isDeviceHere("0007AB853D8C");
-                if (isDeviceHere("D49A201D13D0")) {
-                	updateUI("FOUND: D49A201D13D0\n");
-                } else {
-                	updateUI("CAN'T FIND: D49A201D13D0\n");
-                }
-
-
-        /*
                 HashMap<String, Boolean> lastLocatedDevices = new HashMap<String, Boolean>();
-
                 // TODO: Allow people to enter a NODE name.
-                // TODO: Need to perform the below in a loop.
 
-                // While our application is running {
-        	    
+                while (running) {
                 	HashMap<String, Boolean> locatedDevices = new HashMap<String, Boolean>();
-                	List<String> allDevices = getTrackingList();
+                	List<String> allDevices = getDeviceList();
         	    	for (String bluetoothID : allDevices) {
         	    		if (isDeviceHere(bluetoothID)) {
         	    			// Only send a message to the tracking server if the device wasn't present last pass through.
-        	    			if (!lastLocatedDevices.get(bluetoothID)) {
-        	    				markDevice(bluetoothID, DeviceStateChange.ARRIVAL);
+        	    			if (lastLocatedDevices.get(bluetoothID) == null) {
+        	    				trackDevice(bluetoothID, DeviceStateChange.ARRIVAL);
+
         	    			// Remove device from last located list - everything left in this list at the end of the scan have left the cell.
         	    			} else {
         	    				lastLocatedDevices.remove(bluetoothID);
@@ -290,16 +274,23 @@ public class TeethTrackerClient extends Activity {
         	    	}
 
         	    	for (String bluetoothID : lastLocatedDevices.keySet()) {
-        	    		markDevice(bluetoothID, DeviceStateChange.DEPARTURE);
+        	    		trackDevice(bluetoothID, DeviceStateChange.DEPARTURE);
         	    	}
 
         	    	// Update the last located devices.
         	    	lastLocatedDevices.clear();
         	    	lastLocatedDevices = locatedDevices;
 
-        	    	Thread.yield();
-        	    // }  
-        	     */
+        	    	// Might need to shift this up into the inner device loop....
+        	    	try {
+        	    		// Pause so that we have the opportunity to cancel the bonding request.
+						Thread.sleep(5000);
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+        	    }
+
             	updateUI("done\n");
             }            
         }).start();
