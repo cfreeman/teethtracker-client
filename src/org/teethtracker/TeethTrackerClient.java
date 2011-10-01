@@ -50,6 +50,7 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.RemoteException;
 import android.widget.TextView;
 
@@ -62,12 +63,12 @@ public class TeethTrackerClient extends Activity {
 
 	private TextView tv;
 
-	private IBluetooth ib;
+	//private IBluetooth ib;
 
 	private Boolean detected = false;
 	private Exchanger<Boolean> exchanger = new Exchanger<Boolean>();
 
-	final static String NODE_NAME = "zoneP";
+	final static String NODE_NAME = "zoneD";
 
 	final static int SCAN_TIMEOUT = 10000;
 
@@ -187,7 +188,7 @@ public class TeethTrackerClient extends Activity {
       		ba.enable();
       	}
 
-		ib = getIBluetooth();
+      	IBluetooth ib = getIBluetooth();
 		detected = false;
 
     	try {
@@ -226,8 +227,11 @@ public class TeethTrackerClient extends Activity {
 			try {
 				if (device.getBondState() == BluetoothDevice.BOND_BONDING) {
 					updateUI("Cancelling device Bond: " + device.getAddress() + "\n");
-					ib.cancelPairingUserInput(device.getAddress());
-					ib.cancelBondProcess(device.getAddress());
+					IBluetooth ib = getIBluetooth();
+					if (ib != null) {
+						ib.cancelPairingUserInput(device.getAddress());
+						ib.cancelBondProcess(device.getAddress());
+					}
 				}
 			} catch (RemoteException e) {
 				updateUI("Unable to cancel bond: " + e.getMessage() + "\n");
@@ -246,11 +250,15 @@ public class TeethTrackerClient extends Activity {
         registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
         registerReceiver(mReceiver2, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
         tv.setText("Start\n");
-        setContentView(tv);
+        setContentView(tv);              
         
         new Thread(new Runnable() {
-            public void run() {
+            public void run() {            	
             	Looper.prepare();
+                // Prevent the phone from going to sleep.
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            	PowerManager.WakeLock wl = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "TeethTracker");
+                wl.acquire();
 
                 HashMap<String, Boolean> lastLocatedDevices = new HashMap<String, Boolean>();
                 // TODO: Allow people to enter a NODE name.
@@ -292,6 +300,7 @@ public class TeethTrackerClient extends Activity {
         	    }
 
             	updateUI("done\n");
+            	wl.release();
             }            
         }).start();
     }
