@@ -28,7 +28,6 @@ import java.net.URLConnection;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Exchanger;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -51,7 +50,9 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
-import android.os.RemoteException;
+import android.os.RemoteException;                        
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public class TeethTrackerClient extends Activity {	
@@ -62,13 +63,12 @@ public class TeethTrackerClient extends Activity {
 	private BluetoothSocket btSocket;
 
 	private TextView tv;
-
-	//private IBluetooth ib;
+	private EditText et;
 
 	private Boolean detected = false;
 	private Exchanger<Boolean> exchanger = new Exchanger<Boolean>();
 
-	final static String NODE_NAME = "zoneD";
+	final static String NODE_NAME = "station1";
 
 	final static int SCAN_TIMEOUT = 10000;
 
@@ -95,7 +95,7 @@ public class TeethTrackerClient extends Activity {
 	 */
 	private List<String> getDeviceList() {
 		List<String> results = new ArrayList<String>();
-		updateUI("***getDeviceList\n");
+		updateUI("getDeviceList\n");
 
 		try {
 			URL centralTracker = new URL("http://teethtracker.heroku.com/devices.json");
@@ -137,6 +137,16 @@ public class TeethTrackerClient extends Activity {
 	private void updateUI(final String content) {
 		runOnUiThread(new Runnable() {
 			public void run() {
+				String text = tv.getText().toString();
+				String[] lines = text.split("\n");
+
+				if (lines.length == 10) {
+					tv.setText("");
+					for (int i = 1; i < lines.length; i++) {
+						tv.append(lines[i] + "\n");
+					}
+				}
+				
 				tv.append(content);
 			}
 		});
@@ -172,7 +182,7 @@ public class TeethTrackerClient extends Activity {
 	 * @return True if the device is present in this node, false otherwise.
 	 */
 	private boolean isDeviceHere(String id) {
-		updateUI("***isDeviceHere: " + id + "\n");
+		updateUI("isDeviceHere? " + id + "\n");
 		String bluetoothID = id.substring(0, 2) + ":" +
 							 id.substring(2, 4) + ":" +
 							 id.substring(4, 6) + ":" +
@@ -199,7 +209,7 @@ public class TeethTrackerClient extends Activity {
 		} catch (InterruptedException e) {
 			updateUI("Interrupted wait: " + e.toString() + "\n");
 		} catch (TimeoutException e) {
-			// Do nothing... We timeout when we can't find the device.
+			updateUI("Device not here.\n");
 		}
 
 		return detected;
@@ -245,13 +255,19 @@ public class TeethTrackerClient extends Activity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        LinearLayout layout = new LinearLayout(this);
+        et = new EditText(this);
         tv = new TextView(this);
 
         registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
         registerReceiver(mReceiver2, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
         tv.setText("Start\n");
-        setContentView(tv);              
-        
+        tv.setMaxLines(10);   
+
+        //layout.addView(et);
+        //layout.addView(tv);
+        setContentView(tv);
+
         new Thread(new Runnable() {
             public void run() {            	
             	Looper.prepare();
@@ -315,9 +331,7 @@ public class TeethTrackerClient extends Activity {
     	    IBinder b = (IBinder) m2.invoke(null, "bluetooth");
 
     	    Class c3 = Class.forName("android.bluetooth.IBluetooth");
-
     	    Class[] s2 = c3.getDeclaredClasses();
-
     	    Class c = s2[0];
     	    Method m = c.getDeclaredMethod("asInterface",IBinder.class);
     	    m.setAccessible(true);
