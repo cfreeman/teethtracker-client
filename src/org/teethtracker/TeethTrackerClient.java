@@ -51,8 +51,9 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.RemoteException;                        
+import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
-import android.widget.LinearLayout;
 import android.widget.TextView;
 
 public class TeethTrackerClient extends Activity {	
@@ -64,6 +65,7 @@ public class TeethTrackerClient extends Activity {
 
 	private TextView tv;
 	private EditText et;
+	private Button btnQuit;
 
 	private Boolean detected = false;
 	private Exchanger<Boolean> exchanger = new Exchanger<Boolean>();
@@ -159,11 +161,11 @@ public class TeethTrackerClient extends Activity {
 	 * @param stateChange The new state of the supplied device id.
 	 */
 	private void trackDevice(final String id, final DeviceStateChange stateChange) {
-		updateUI("***trackDevice: " + id + " - " + stateChange.getType() + "\n");
+		updateUI("***trackDevice: " + id + " - " + stateChange.getType() + "name: " + et.getText().toString() + "\n");
 
 		try {
 		    URL centralTracker = new URL("http://teethtracker.heroku.com/device_movements/new?type="
-		    						     + stateChange.getType() + "&node=" + NODE_NAME + "&bluetooth_id=" + id);
+		    						     + stateChange.getType() + "&node=" + et.getText().toString() + "&bluetooth_id=" + id);
 		    URLConnection trackerConnection = centralTracker.openConnection();
 		    trackerConnection.getContentLength();
 
@@ -249,24 +251,31 @@ public class TeethTrackerClient extends Activity {
 		}
 	};
 	
+	
     /**
      * Called when activity is first created.
      */
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        LinearLayout layout = new LinearLayout(this);
-        et = new EditText(this);
-        tv = new TextView(this);
-
+        
+        setContentView(R.layout.main);
+        tv = (TextView)findViewById(R.id.txtConsole);
+        et = (EditText)findViewById(R.id.txtNodeName);
+        et.setText(NODE_NAME);
+        
+        btnQuit = (Button)findViewById(R.id.btnQuit);
+        btnQuit.setOnClickListener(new View.OnClickListener() {
+			
+			public void onClick(View v) {
+				finish();
+			}
+		});
+        
         registerReceiver(mReceiver, new IntentFilter(BluetoothDevice.ACTION_ACL_CONNECTED));
         registerReceiver(mReceiver2, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
         tv.setText("Start\n");
         tv.setMaxLines(10);   
-
-        //layout.addView(et);
-        //layout.addView(tv);
-        setContentView(tv);
 
         new Thread(new Runnable() {
             public void run() {            	
@@ -359,5 +368,10 @@ public class TeethTrackerClient extends Activity {
     public void onDestroy() {
     	running = false;
     	super.onDestroy();
+    }
+    
+    @Override
+    public void onPause() {
+    	super.onPause();
     }
 }
